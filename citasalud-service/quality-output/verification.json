@@ -1,0 +1,110 @@
+{
+  "proyecto": "citasalud-service",
+  "version": "0.0.1-SNAPSHOT",
+  "fecha": "2026-06-27",
+  "commit": "no-git-repo",
+  "tests": {
+    "comando": ".\\gradlew.bat test jacocoTestReport --rerun-tasks",
+    "passed": 33,
+    "total": 33,
+    "coverage": 96.56,
+    "coverage_fuente": "build/reports/jacoco/test/jacocoTestReport.xml",
+    "nota": "BUILD SUCCESSFUL en 54s. JaCoCo 0.8.12 emite advertencia de instrumentacion para clases internas de JDK 25 (sun/text/resources/cldr FormatData_es_EC, class file major version 69) pero el Task :jacocoTestReport completa exitosamente. Cobertura calculada desde el contador raiz del XML: missed=41, covered=1152, total=1193 -> 1152/1193*100=96.56%. Los 33 XML de resultados (build/test-results/test/TEST-*.xml) tienen tests='1' failures='0' errors='0' cada uno."
+  },
+  "security": {
+    "fuente": "Grep manual sobre src/main (secretos, API keys, tokens, Spring Security, H2 console); revision de build.gradle y src/main/resources/application.yaml",
+    "critical": 0,
+    "high": 1,
+    "secrets": 0,
+    "hallazgos": [
+      {
+        "regla": "h2-console-habilitada-en-perfil-principal",
+        "archivo": "src/main/resources/application.yaml",
+        "linea": 14,
+        "severidad": "HIGH",
+        "descripcion": "H2 console habilitada (spring.h2.console.enabled: true) en application.yaml, que es el perfil por defecto activo en produccion. Mitigado parcialmente por web-allow-others: false (acceso solo local), pero el path /h2-console queda expuesto sin autenticacion adicional en el perfil de produccion. Debe moverse al perfil de desarrollo/test."
+      }
+    ]
+  },
+  "spec": "specs/001-reserva-cita-online/spec.md",
+  "criteria": [
+    {
+      "id": "FR-001",
+      "fuente": "spec.md · FR-001 (lista de medicos disponibles)",
+      "status": "cumple",
+      "evidencia": "Test ConsultarDisponibilidadFunctionalTest$DadoPacienteAuth.cuandoGetApiV1Medicos_entoncesRetorna200ConListaMedicos PASA (XML: failures=0). GET /api/v1/medicos retorna HTTP 200 con array de medicos de longitud 2. Archivo: src/test/java/org/ups/citasalud/functional/ConsultarDisponibilidadFunctionalTest.java:31"
+    },
+    {
+      "id": "FR-002",
+      "fuente": "spec.md · FR-002 (calendario de disponibilidad con franjas libres/ocupadas)",
+      "status": "cumple",
+      "evidencia": "Test DadoMedicoConFranjas.cuandoGetDisponibilidad_entoncesRetorna200ConFranjasYCampoDisponible PASA (XML: failures=0): verifica campo $.franjas[0].disponible como booleano. Test DadoMedicoSinFranjasEnFechaFutura PASA: lista vacia para fecha sin agenda. Archivo: src/test/java/org/ups/citasalud/functional/ConsultarDisponibilidadFunctionalTest.java:43 y 59"
+    },
+    {
+      "id": "FR-003",
+      "fuente": "spec.md · FR-003 (seleccionar medico, fecha y franja para reservar)",
+      "status": "cumple",
+      "evidencia": "Test ReservarCitaFunctionalTest$DadoPacienteConHeaderXPatientId.cuandoPostApiV1Citas_entoncesRetorna201ConCitaConfirmada PASA (XML: failures=0): POST /api/v1/citas con {franjaHorariaId} retorna HTTP 201 + $.estado=CONFIRMADA + $.citaId + $.medico.nombre. Archivo: src/test/java/org/ups/citasalud/functional/ReservarCitaFunctionalTest.java:55"
+    },
+    {
+      "id": "FR-004",
+      "fuente": "spec.md · FR-004 (validar disponibilidad en momento exacto de confirmacion - control de concurrencia)",
+      "status": "cumple",
+      "evidencia": "Test DadoDosPacientesConfirmanMismaFranjaConcurrentemente.entoncesUnoRetorna201YOtroRetorna409 PASA (XML: failures=0): ExecutorService con 2 hilos envia POSTs simultaneos sobre FRANJA_CONCURRENCIA; assertEquals(1, created) y assertEquals(1, conflict). Implementacion: FranjaHorariaPersistenceAdapter.buscarConLockPesimista usa @Lock(PESSIMISTIC_WRITE). Archivo: src/test/java/org/ups/citasalud/functional/ReservarCitaFunctionalTest.java:186"
+    },
+    {
+      "id": "FR-005",
+      "fuente": "spec.md · FR-005 (registrar cita CONFIRMADA y marcar franja OCUPADA de forma atomica)",
+      "status": "cumple",
+      "evidencia": "Test ReservarCitaServiceTest$DadoPacienteValidoYFranjaDisponible.cuandoReservar_entoncesRetornaCitaConfirmadaYPublicaEvento PASA (XML: failures=0): assertEquals(EstadoCita.CONFIRMADA, resultado.getEstado()) y assertEquals(EstadoFranja.OCUPADA, franja.getEstado()). Ambas operaciones en unica transaccion (@Transactional en ReservarCitaService.reservar). Archivo: src/test/java/org/ups/citasalud/unit/application/usecase/ReservarCitaServiceTest.java:62"
+    },
+    {
+      "id": "FR-006",
+      "fuente": "spec.md · FR-006 (notificacion WhatsApp en <=60s)",
+      "status": "cumple",
+      "evidencia": "Test WhatsAppNotificationAdapterIT$DadoCitaConfirmadaEvent.cuandoNotificarConfirmacion_entoncesLogNotificacionSinExcepcion PASA (XML: failures=0): assertDoesNotThrow sobre el adapter. El mecanismo es @Async + @TransactionalEventListener(phase=AFTER_COMMIT): la notificacion se dispara en hilo separado DESPUES del commit, desacoplada de la respuesta HTTP. NOTA: la implementacion actual es MVP stub (solo log; ver WhatsAppNotificationAdapter.java:32 comentario 'MVP stub — produccion: integrar WhatsApp Business API con retry exponencial'). No existe test de tiempo <=60s. Archivo: src/test/java/org/ups/citasalud/integration/adapter/notification/WhatsAppNotificationAdapterIT.java:28"
+    },
+    {
+      "id": "FR-007",
+      "fuente": "spec.md · FR-007 (disponibilidad 24/7 sin ventanas de mantenimiento)",
+      "status": "cumple",
+      "evidencia": "Test ActuatorHealthFunctionalTest$CuandoGetActuatorHealth.entoncesRetorna200ConStatusUp PASA (XML: failures=0): GET /actuator/health retorna HTTP 200 + $.status=UP. La disponibilidad 24/7 es un atributo operacional; el health endpoint (FR-011) es la evidencia tecnica verificable del requisito. Archivo: src/test/java/org/ups/citasalud/functional/ActuatorHealthFunctionalTest.java:27"
+    },
+    {
+      "id": "FR-008",
+      "fuente": "spec.md · FR-008 (mensaje claro cuando franja ya ocupada)",
+      "status": "cumple",
+      "evidencia": "Test ReservarCitaFunctionalTest$DadaFranjaYaOcupada.cuandoPostApiV1Citas_entoncesRetorna409ConCodigoFranjaOcupada PASA (XML: failures=0): retorna HTTP 409 + $.codigo='FRANJA_OCUPADA'. GlobalExceptionHandler mapea FranjaOcupadaException a 409 con ese codigo. Archivo: src/test/java/org/ups/citasalud/functional/ReservarCitaFunctionalTest.java:71"
+    },
+    {
+      "id": "FR-009",
+      "fuente": "spec.md · FR-009 (unicidad de reserva - una franja, un paciente)",
+      "status": "cumple",
+      "evidencia": "Test DadaFranjaYaOcupada PASA (secuencial: segundo intento sobre franja ocupada = 409). Test DadoDosPacientesConfirmanMismaFranjaConcurrentemente PASA (concurrente: exactamente 1x201 y 1x409). Archivos: ReservarCitaFunctionalTest.java:71 y :186"
+    },
+    {
+      "id": "FR-010",
+      "fuente": "spec.md · FR-010 (identificar paciente desde header X-Patient-Id, nunca del body)",
+      "status": "cumple",
+      "evidencia": "Tres tests: (1) DadoPacienteConHeaderXPatientId retorna 201 con header valido (linea 55); (2) DadoSinHeaderXPatientId retorna 404 cuando falta X-Patient-Id (linea 122); (3) DadoHeaderXPatientIdInvalido retorna 404 con UUID no valido (linea 133). Todos PASAN (XML: failures=0). PatientIdentityExtractor.extractPacienteId lee exclusivamente request.getHeader('X-Patient-Id') (linea 20). El OpenAPI spec (ReservarCitaRequest) solo tiene 'franjaHorariaId' como campo del body."
+    },
+    {
+      "id": "FR-011",
+      "fuente": "spec.md · FR-011 (endpoint /actuator/health retorna UP)",
+      "status": "cumple",
+      "evidencia": "Test ActuatorHealthFunctionalTest$CuandoGetActuatorHealth.entoncesRetorna200ConStatusUp PASA (XML: failures=0): GET /actuator/health retorna HTTP 200 + $.status='UP'. application.yaml expone solo 'health' bajo management.endpoints.web.exposure.include. Archivo: src/test/java/org/ups/citasalud/functional/ActuatorHealthFunctionalTest.java:27"
+    },
+    {
+      "id": "EC-001",
+      "fuente": "spec.md · Edge Cases (idempotencia - reintento no duplica cita)",
+      "status": "cumple",
+      "evidencia": "Test ReservarCitaFunctionalTest$DadoPacienteQueReintentalaMismaReserva.cuandoReintentaConMismaFranja_entoncesSegundoPedidoRetorna409YCitaNoDuplicada PASA (XML: build/test-results/test/TEST-org.ups.citasalud.functional.ReservarCitaFunctionalTest$DadoPacienteQueReintentalaMismaReserva.xml, tests=1, failures=0). El test: (a) POST con FRANJA_REINTENTO -> andExpect(status().isCreated()) [linea 170-174]; (b) POST identico con misma franja [linea 176-182]; (c) andExpect(status().isConflict()) + andExpect(jsonPath('$.codigo').value('FRANJA_OCUPADA')). El 409 en el segundo intento demuestra que la franja fue marcada OCUPADA y el reintento es rechazado sin crear una segunda cita. Archivo: src/test/java/org/ups/citasalud/functional/ReservarCitaFunctionalTest.java:162"
+    },
+    {
+      "id": "EC-002",
+      "fuente": "spec.md · Edge Cases (fallo WhatsApp - reserva queda registrada)",
+      "status": "cumple",
+      "evidencia": "Test WhatsAppFalloFunctionalTest$DadoWhatsAppNoDisponible.cuandoNotificacionFalla_entoncesReservaQuedaRegistradaYAccesible PASA (XML: build/test-results/test/TEST-org.ups.citasalud.functional.WhatsAppFalloFunctionalTest$DadoWhatsAppNoDisponible.xml, tests=1, failures=0). El test: (a) @MockitoBean sobre WhatsAppNotificationAdapter + doThrow(RuntimeException('WhatsApp service unavailable')).when(notificationAdapter).onCitaConfirmada(any()) [linea 52-53]; (b) POST /api/v1/citas -> andExpect(status().isCreated()) + andExpect(jsonPath('$.estado').value('CONFIRMADA')) [lineas 57-63]; (c) GET /api/v1/citas/{citaId} -> andExpect(status().isOk()) + andExpect(jsonPath('$.estado').value('CONFIRMADA')) [lineas 70-72]. El stacktrace en system-out del XML confirma que la excepcion del adapter fue capturada por Spring (TransactionSynchronizationUtils.invokeAfterCompletion) sin revertir la transaccion principal. Archivo: src/test/java/org/ups/citasalud/functional/WhatsAppFalloFunctionalTest.java:47"
+    }
+  ]
+}

@@ -1,0 +1,379 @@
+openapi: 3.1.0
+
+info:
+  title: CitaSalud Service API
+  description: |
+    API para el servicio de reserva de citas médicas en línea 24/7.
+    Permite a los pacientes consultar disponibilidad y reservar citas con médicos
+    habilitados para atención online.
+  version: 1.0.0
+  contact:
+    name: CitaSalud Development Team
+    email: cristian.espinoza.developer@gmail.com
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Servidor de desarrollo local
+  - url: https://api.citasalud.ups.edu.ec/api/v1
+    description: Servidor de producción
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: medicos
+    description: Consulta de médicos disponibles para reserva online
+  - name: disponibilidad
+    description: Consulta de franjas horarias disponibles
+  - name: citas
+    description: Gestión de reservas de citas
+
+paths:
+
+  /medicos:
+    get:
+      tags: [medicos]
+      summary: Listar médicos disponibles para reserva online
+      operationId: listarMedicosDisponibles
+      description: |
+        Retorna la lista de médicos habilitados para reserva en línea.
+        Solo incluye médicos con `disponibleOnline = true`.
+      parameters:
+        - name: especialidad
+          in: query
+          required: false
+          description: Filtrar por especialidad médica
+          schema:
+            type: string
+            example: "Medicina General"
+      responses:
+        '200':
+          description: Lista de médicos disponibles para reserva online
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListaMedicosResponse'
+        '401':
+          $ref: '#/components/responses/NoAutorizado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /medicos/{medicoId}/disponibilidad:
+    get:
+      tags: [disponibilidad]
+      summary: Consultar disponibilidad de un médico para una fecha
+      operationId: consultarDisponibilidad
+      description: |
+        Retorna todas las franjas horarias de un médico para la fecha indicada,
+        diferenciando entre franjas disponibles y ocupadas.
+      parameters:
+        - name: medicoId
+          in: path
+          required: true
+          description: Identificador único del médico
+          schema:
+            type: string
+            format: uuid
+            example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: fecha
+          in: query
+          required: true
+          description: Fecha de consulta en formato ISO 8601 (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+            example: "2026-07-15"
+      responses:
+        '200':
+          description: Franjas horarias del médico para la fecha indicada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisponibilidadMedicoResponse'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutorizado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /citas:
+    post:
+      tags: [citas]
+      summary: Reservar una cita médica
+      operationId: reservarCita
+      description: |
+        Crea una reserva de cita para el paciente autenticado en la franja horaria indicada.
+        El `pacienteId` se extrae del claim `sub` del token JWT Bearer (producción) o del
+        header `X-Patient-Id` (stub de desarrollo). No se acepta en el cuerpo de la solicitud.
+
+        Si la franja ya está ocupada al momento de confirmar, retorna 409 Conflict.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservarCitaRequest'
+      responses:
+        '201':
+          description: Cita reservada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CitaConfirmadaResponse'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutorizado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: La franja horaria ya está ocupada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                codigo: FRANJA_OCUPADA
+                mensaje: "La franja horaria seleccionada ya no está disponible. Por favor, elija otra franja."
+                timestamp: "2026-06-27T22:00:00Z"
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+  /citas/{citaId}:
+    get:
+      tags: [citas]
+      summary: Consultar detalles de una cita
+      operationId: obtenerCita
+      description: Retorna los detalles de una cita por su identificador.
+      parameters:
+        - name: citaId
+          in: path
+          required: true
+          description: Identificador único de la cita
+          schema:
+            type: string
+            format: uuid
+            example: "660e8400-e29b-41d4-a716-446655440001"
+      responses:
+        '200':
+          description: Detalles de la cita
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CitaConfirmadaResponse'
+        '401':
+          $ref: '#/components/responses/NoAutorizado'
+        '403':
+          $ref: '#/components/responses/Prohibido'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT obtenido en el proceso de autenticación
+
+  schemas:
+
+    MedicoResumen:
+      type: object
+      required: [id, nombre, apellido, especialidad]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identificador único del médico
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        nombre:
+          type: string
+          description: Nombre del médico
+          example: "Ana"
+        apellido:
+          type: string
+          description: Apellido del médico
+          example: "García López"
+        especialidad:
+          type: string
+          description: Especialidad médica
+          example: "Medicina General"
+
+    ListaMedicosResponse:
+      type: object
+      required: [medicos]
+      properties:
+        medicos:
+          type: array
+          items:
+            $ref: '#/components/schemas/MedicoResumen'
+
+    FranjaHorariaInfo:
+      type: object
+      required: [id, horaInicio, horaFin, disponible]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identificador de la franja horaria
+          example: "770e8400-e29b-41d4-a716-446655440002"
+        horaInicio:
+          type: string
+          format: time
+          description: Hora de inicio de la franja (HH:mm)
+          example: "09:00"
+        horaFin:
+          type: string
+          format: time
+          description: Hora de fin de la franja (HH:mm)
+          example: "09:30"
+        disponible:
+          type: boolean
+          description: Indica si la franja está disponible para reserva
+          example: true
+
+    DisponibilidadMedicoResponse:
+      type: object
+      required: [medicoId, fecha, franjas]
+      properties:
+        medicoId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        fecha:
+          type: string
+          format: date
+          example: "2026-07-15"
+        franjas:
+          type: array
+          description: Lista de franjas horarias; vacía si no hay agenda para esa fecha
+          items:
+            $ref: '#/components/schemas/FranjaHorariaInfo'
+
+    ReservarCitaRequest:
+      type: object
+      required: [franjaHorariaId]
+      properties:
+        franjaHorariaId:
+          type: string
+          format: uuid
+          description: Identificador de la franja horaria a reservar
+          example: "770e8400-e29b-41d4-a716-446655440002"
+
+    CitaConfirmadaResponse:
+      type: object
+      required: [citaId, estado, medico, fecha, horaInicio, horaFin]
+      properties:
+        citaId:
+          type: string
+          format: uuid
+          description: Identificador único de la cita confirmada
+          example: "660e8400-e29b-41d4-a716-446655440001"
+        estado:
+          type: string
+          enum: [CONFIRMADA, CANCELADA, COMPLETADA]
+          description: Estado actual de la cita
+          example: "CONFIRMADA"
+        medico:
+          $ref: '#/components/schemas/MedicoResumen'
+        fecha:
+          type: string
+          format: date
+          description: Fecha de la cita
+          example: "2026-07-15"
+        horaInicio:
+          type: string
+          format: time
+          description: Hora de inicio (HH:mm)
+          example: "09:00"
+        horaFin:
+          type: string
+          format: time
+          description: Hora de fin (HH:mm)
+          example: "09:30"
+        fechaCreacion:
+          type: string
+          format: date-time
+          description: Timestamp de cuando se realizó la reserva
+          example: "2026-06-27T22:05:00Z"
+
+    ErrorResponse:
+      type: object
+      required: [codigo, mensaje, timestamp]
+      properties:
+        codigo:
+          type: string
+          description: Código de error legible por máquina
+          example: "FRANJA_OCUPADA"
+        mensaje:
+          type: string
+          description: Mensaje de error legible por humanos
+          example: "La franja horaria seleccionada ya no está disponible."
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-06-27T22:05:00Z"
+
+  responses:
+
+    NoAutorizado:
+      description: Token de autenticación ausente o inválido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            codigo: NO_AUTORIZADO
+            mensaje: "Token de autenticación inválido o expirado."
+            timestamp: "2026-06-27T22:05:00Z"
+
+    Prohibido:
+      description: El paciente no tiene permisos para acceder a este recurso
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            codigo: ACCESO_PROHIBIDO
+            mensaje: "No tiene permisos para acceder a esta cita."
+            timestamp: "2026-06-27T22:05:00Z"
+
+    SolicitudInvalida:
+      description: Parámetros de la solicitud inválidos o faltantes
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            codigo: SOLICITUD_INVALIDA
+            mensaje: "El campo franjaHorariaId es obligatorio."
+            timestamp: "2026-06-27T22:05:00Z"
+
+    NoEncontrado:
+      description: El recurso solicitado no fue encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            codigo: NO_ENCONTRADO
+            mensaje: "El médico indicado no existe o no está disponible para reserva online."
+            timestamp: "2026-06-27T22:05:00Z"
+
+    ErrorInterno:
+      description: Error interno del servidor
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            codigo: ERROR_INTERNO
+            mensaje: "Ha ocurrido un error inesperado. Intente nuevamente."
+            timestamp: "2026-06-27T22:05:00Z"
